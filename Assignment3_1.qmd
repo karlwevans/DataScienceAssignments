@@ -1,0 +1,342 @@
+---
+title: "Analysis of Dr Who Dataset"
+author: "Karl Evans a1743822"
+date: today
+format: pdf
+editor: visual
+---
+
+{r, echo=FALSE}
+pacman::p_load(harrypotter, dplyr, stringr, forcats, tidyr,ggplot2, scales, rsample, recipes, textrecipes, parsnip, workflows, tidyverse, tidymodels, gt)
+
+Introduction
+
+The dataset examines Dr Who UK viewership numbers using
+
+The data was obtained from the TidyTuesday website.
+
+The data consists of 167 episodes with information on manufacturer, review date, rating, bean type, and flavour.
+
+The key research question was to find a predictive model of Dr Who UK viewership.
+
+Methods
+
+The analysis was performed in R (R Core Team 2022) using RStudio. The data was presented as four dataframes which were joined either by story_number or season_number plus episode_number. The relationship between viewership and the predictors: rating, imdb rating, duration, director, writer, type and description was modelled using linear regression and a random forest. Date information was believed to be encoded in the season and episode number data and was excluded.
+
+Two models were considered over two dataset: Firstly, using only rating, imdb rating, duration, director, writer and type. - linear: - polynomial model for episode and series number terms - random forest: Secondly, common words and charcter names were pulled from the episode description and the same two models were fit.
+
+The final model was chosen using rmse and .
+
+Results
+
+Figure 1 gives a scatter-plot of v against cocoa percentage. The colour of the points and lines indicates the country of origin for the beans. The lines are loess lines to indicate the relationship between percent and rating. We see that the majority of the lines show a negative quadratic relationship between rating and percent. Of note is Peru that has little change in rating for different percents, and Madagascar that has a negative linear relationship between percent and rating.
+
+The AIC and BIC for the three linear models is given in Table @tbl-letters. For both AIC and BIC, we see that the model non_country gives the best model as indicated by having the smallest value. Hence the final model was chosen to be the model non_country.
+
+Model
+
+RMSE
+
+Rsd
+
+Linear
+
+0.9761
+
+0.6559
+
+Random Forest
+
+0.7784
+
+0.7498
+
+Desc.Linear
+
+1.0215
+
+0.6843
+
+Desc.Random Forest
+
+0.8606
+
+0.7428
+
+Summary statistics for each of the three models. Both AIC and BIC are shown. With both AIC and BIC we see the best model is the quadratic with no country. {#tbl-letters}
+
+Discussion
+
+We have found that percent of cocoa has a significant effect on rating of chocolate bars, but that country of origin of the beans does not. We have found that the ratings increases as percent increases to a maximum rating of 3.23 at 69%. We advise that to maximise the rating of chocolate bars, manufacturers should aim for a percent of 69%. The author notes that the large amount of chocolate consumed during this analysis has no discernable effect of the final results.
+
+R Core Team. 2022. R: A Language and Environment for Statistical Computing. Vienna, Austria: R Foundation for Statistical Computing. https://www.R-project.org/.
+
+{r, echo=FALSE}
+directors <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-23/directors.csv', show_col_types = FALSE)
+episodes <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-23/episodes.csv', show_col_types = FALSE)
+writers <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-23/writers.csv', show_col_types = FALSE)
+imdb <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-23/imdb.csv', show_col_types = FALSE)
+
+{r, echo=FALSE}
+imdb<-rename(imdb, season_number=season)
+imdb<-rename(imdb, episode_number=ep_num)
+
+{r, echo=FALSE}
+drwho<-left_join(episodes,writers, by="story_number")
+drwho<-left_join(drwho,directors,by="story_number")
+drwho<-left_join(drwho,imdb,by=c("season_number","episode_number"))
+drwho<-as.data.frame(drwho)
+
+{r, echo=FALSE}
+drwho<-drwho|>
+  filter(!is.na(uk_viewers))
+drwho$season_number<-drwho$season_number|>replace_na(0)
+drwho$episode_number<-drwho$episode_number|>replace_na(0)
+drwho2<-drwho|>
+     select(season_number, episode_number, uk_viewers, rating.x, rating.y, duration, director, writer, type)
+drwho1<-drwho|>
+     select(season_number, episode_number, uk_viewers, rating.x, rating.y, duration, director, writer, type, desc)
+
+EDA
+
+{r, echo=FALSE}
+#| layout-ncol: 2
+#| fig-cap: 
+#|   - "Writers"
+#|   - "Directors"
+#|   - "Epsiode Type"
+ggplot(drwho)+
+  geom_boxplot(aes(x=reorder(writer,uk_viewers), y=uk_viewers))
+ggplot(drwho)+
+  geom_boxplot(aes(x=reorder(director,uk_viewers), y=uk_viewers))
+ggplot(drwho)+
+  geom_boxplot(aes(x=type, y=uk_viewers))
+
+{r, echo=FALSE}
+#| layout-ncol: 2
+#| fig-cap: 
+#|   - "Speed and Stopping Distances of Cars"
+#|   - "Vapor Pressure of Mercury as a Function of Temperature"
+ggplot(aes(x=rating.x, y=uk_viewers), data= drwho)+
+  geom_point(aes(col=factor(duration)))+
+  geom_smooth(method="glm")
+ggplot(aes(x=rating.y, y=uk_viewers), data= drwho)+
+  geom_point(aes(x=rating.y, y=uk_viewers))+
+  geom_smooth(method="glm")
+ggplot(aes(x=season_number, y=uk_viewers), data=drwho)+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~poly(x,3))
+ggplot(aes(x=episode_number, y=uk_viewers), data=drwho)+
+  geom_point()+
+  geom_smooth(method="lm", formula=y~poly(x,2))
+
+{r, echo=FALSE, eval=FALSE}
+skimr::skim(drwho)
+
+{r, echo=FALSE}
+drwho_split<-drwho2|>initial_split(strata=uk_viewers)
+drwho_train<-training(drwho_split)
+drwho_test<-testing(drwho_split)
+
+drwho_folds<-bootstraps(drwho_train, strata=uk_viewers)
+drwho_cv <- vfold_cv(drwho_train, strata = uk_viewers)
+
+Random Forest
+
+{r}
+rpart()
+
+{r, echo=FALSE}
+drwho_recipe<-
+  recipe(uk_viewers~ ., data=drwho_train)|>
+  step_other(writer, director)|>
+  step_impute_mean(rating.y)|>
+  step_dummy(all_nominal_predictors())
+
+#drwho_recipe <- drwho_recipe %>% update_role(season_number,episode_number, new_role = "ID")
+
+drwho_recipe|>prep()|>juice()
+
+Forest_model<-
+  rand_forest(
+    mtry=tune(),
+    min_n=tune(),
+    trees=1000)|>
+  set_mode("regression")|>
+  set_engine("ranger",
+             importance="permutation",
+             keep.inbag=TRUE)
+
+forest_model_WF<-workflow()|>
+  add_recipe(drwho_recipe)|>
+  add_model(Forest_model)
+
+doParallel::registerDoParallel()
+   df_tune <- tune_grid(
+     forest_model_WF,
+     resamples = drwho_cv,
+     grid = 20)
+
+#df_tune |> autoplot()
+
+select_best(df_tune, "rmse")
+
+best_parameters<-select_best(df_tune, "rmse")
+
+forest_wf_final<-forest_model_WF|>
+  finalize_workflow(best_parameters)
+
+forest_fit<-forest_wf_final|>
+  fit(drwho_train)
+
+#forest_fit|>extract_fit_engine()|> vip::vip()
+
+#forest_fit|>extract_fit_engine()|>vip::vi()
+
+#last_fit<-last_fit(forest_wf_final, drwho_split)
+#last_fit|>collect_metrics()
+
+Regression
+
+{r, echo=FALSE}
+drwho_recipe2<-
+  recipe(uk_viewers~ ., data=drwho_train)|>
+  step_impute_mean(rating.y)|>
+  step_dummy(all_nominal_predictors())|>
+  step_other(writer, director)
+
+#drwho_recipe2|> prep()|> juice()
+
+Regression_model<-
+  linear_reg()|>
+  set_engine("lm")|>
+  set_mode("regression")
+
+Regression_model_WF<-workflow()|>
+  add_recipe(drwho_recipe)|>
+  add_model(Regression_model)
+
+regression_fit <-
+    Regression_model_WF |>
+    fit(drwho_train)
+
+#regression_fit |> tidy()
+#regression_fit |> glance()
+
+#last_fit(regression_fit, drwho_split) |> collect_metrics()
+
+
+Description Info
+
+{r, echo=FALSE}
+drwho3<-drwho1|>
+  mutate(#dalek=as.character(str_detect(desc, "Dalek")),
+         #cybermen=as.character(str_detect(desc, "Cybermen")),
+        # tardis=as.character(str_detect(desc, "TARDIS")),
+    #     donna=as.character(str_detect(desc, "Donna")),
+    #     martha=as.character(str_detect(desc, "Martha")),
+    #     rose=as.character(str_detect(desc, "Rose")),
+    #     amy=as.character(str_detect(desc, "Amy")),
+         clara=as.character(str_detect(desc, "Clara")),
+    #     ryan=as.character(str_detect(desc, "Ryan")),
+         bill=as.character(str_detect(desc, "Bill")),
+    #     rory=as.character(str_detect(desc, "Rory")),
+     #    yaz=as.character(str_detect(desc, "Yaz")),
+    #     graham=as.character(str_detect(desc, "Graham")),         
+    #     space=as.character(str_detect(desc, "space")),
+    #     alien=as.character(str_detect(desc, "alien")),
+    #     discover=as.character(str_detect(desc, "discover")),
+    #     trapped=as.character(str_detect(desc, "trapped")),
+    #     destroy=as.character(str_detect(desc, "destroy|destruction")),
+    #     future=as.character(str_detect(desc, "future")),
+    #     friends=as.character(str_detect(desc, "friends")),
+    #     deadly=as.character(str_detect(desc, "deadly")),
+         mysterious=as.character(str_detect(desc, "mysterious")),
+  #       save=as.character(str_detect(desc, "save")),
+   #      war=as.character(str_detect(desc, "war")),
+    #     century=as.character(str_detect(desc, "century")),
+    #     universe=as.character(str_detect(desc, "universe")),
+    #    people=as.character(str_detect(desc, "people")),
+    #     human=as.character(str_detect(desc, "human")),
+     #    meet=as.character(str_detect(desc, "meet")),
+    #     earth=as.character(str_detect(desc, "Earth|world")),
+     #    london=as.character(str_detect(desc, "London"))
+        )
+drwho3<-drwho3|>
+  select(-desc)
+
+{r, echo=FALSE}
+drwho3_split<-drwho3|>initial_split(strata=uk_viewers)
+drwho3_train<-training(drwho3_split)
+drwho3_test<-testing(drwho3_split)
+
+drwho3_folds<-bootstraps(drwho3_train, strata=uk_viewers)
+drwho3_cv <- vfold_cv(drwho3_train, strata = uk_viewers)
+
+Random Forest
+
+{r, echo=FALSE}
+drwho3_recipe<-
+  recipe(uk_viewers~ ., data=drwho3_train)|>
+  step_other(writer, director)|>
+  step_impute_mean(rating.y)|>
+  step_impute_mode(all_nominal_predictors())|>
+  step_dummy(all_nominal_predictors())
+
+drwho3_recipe|>prep()|>juice()
+
+Forest_model<-
+  rand_forest(
+    mtry=tune(),
+    min_n=tune(),
+    trees=1000)|>
+  set_mode("regression")|>
+  set_engine("ranger",
+             importance="permutation",
+             keep.inbag=TRUE)
+
+forest2_model_WF<-workflow()|>
+  add_recipe(drwho3_recipe)|>
+  add_model(Forest_model)
+
+doParallel::registerDoParallel()
+   df2_tune <- tune_grid(
+     forest2_model_WF,
+     resamples = drwho3_cv,
+     grid = 20)
+
+#df2_tune |> autoplot()
+
+select_best(df2_tune, "rmse")
+
+best_parameters<-select_best(df2_tune, "rmse")
+
+forest2_wf_final<-forest2_model_WF|>
+  finalize_workflow(best_parameters)
+
+forest2_fit<-forest2_wf_final|>
+  fit(drwho3_train)
+
+#forest2_fit|>  extract_fit_engine()|>  vip::vi()
+
+#forest2_fit|> extract_fit_engine()|> vip::vi()
+
+#last_fit(forest2_wf_final, drwho3_split)|>collect_metrics()
+
+Regression
+
+{r, echo=FALSE}
+Regression2_model_WF<-
+workflow()|>
+  add_recipe(drwho3_recipe)|>
+  add_model(Regression_model)
+Regression_model_WF
+
+regression2_fit <-
+    Regression2_model_WF |>
+    fit(drwho3_train)
+
+regression2_fit|>tidy()>gt()
+
+last_fit(regression2_fit, drwho3_split) |> collect_metrics()|>gt()
+
